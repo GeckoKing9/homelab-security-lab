@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #11161d; color: #d7e0e8;
+    font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+  }
+  .wrap {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 100%; padding: 0 1rem; gap: .6rem;
+  }
+  .label-group { display: flex; align-items: center; gap: .4rem; min-width: 0; }
+  .label { font-size: .85rem; font-weight: bold; color: #d7e0e8; white-space: nowrap; }
+  .sub { font-size: .68rem; color: #6e7b87; white-space: nowrap; }
+
+  .info-icon {
+    width: 15px; height: 15px; border-radius: 50%; border: 1px solid #6e7b87;
+    color: #8b949e; font-size: .68rem; line-height: 13px; text-align: center;
+    cursor: help; flex-shrink: 0; user-select: none;
+  }
+  .info-icon:hover { border-color: #79c0ff; color: #79c0ff; }
+
+  .switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; cursor: pointer; inset: 0; background: #232b34;
+    border-radius: 22px; transition: background .15s ease;
+  }
+  .slider::before {
+    content: ""; position: absolute; height: 16px; width: 16px; left: 3px; bottom: 3px;
+    background: #8b949e; border-radius: 50%; transition: transform .15s ease, background .15s ease;
+  }
+  input:checked + .slider { background: #1a3d24; }
+  input:checked + .slider::before { transform: translateX(18px); background: #7ee787; }
+  input:disabled + .slider { opacity: .5; cursor: wait; }
+
+  .state { font-size: .68rem; width: 28px; text-align: center; flex-shrink: 0; }
+  .state.on { color: #7ee787; }
+  .state.off { color: #6e7b87; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="label-group">
+      <span class="label">Exit node</span>
+      <span class="info-icon" tabindex="0" title="What this does: lets OTHER devices on your tailnet route ALL their internet traffic through this Pi (not just DNS) - useful on untrusted WiFi (hotel/cafe), since traffic leaves looking like it's from home, fully encrypted.&#10;&#10;Cost: uses your home upload bandwidth + adds latency for whichever device uses it.&#10;&#10;This toggle only controls whether the Pi OFFERS itself as an option - each device still picks it individually in its own Tailscale app. It does NOT force anyone's traffic through the Pi and is not a whole-Pi switch - it's a per-device opt-in, same as any other exit node.">i</span>
+    </div>
+    <span class="state {{ 'on' if enabled else 'off' }}">{{ 'ON' if enabled else 'OFF' }}</span>
+    <label class="switch">
+      <input type="checkbox" id="toggle" {{ 'checked' if enabled else '' }} onchange="flip(this)">
+      <span class="slider"></span>
+    </label>
+  </div>
+<script>
+function flip(el) {
+  el.disabled = true;
+  fetch('/widgets/exit-node/toggle', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'enable=' + (el.checked ? 'on' : 'off'),
+  }).then(() => location.reload()).catch(() => { el.disabled = false; el.checked = !el.checked; });
+}
+</script>
+</body>
+</html>

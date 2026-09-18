@@ -1,0 +1,47 @@
+==============================
+ FLIPPER CHEAT SHEET (read first)
+==============================
+Device: Whadin3n
+
+Every folder has a _README.txt = what it is,
+how to use, examples. Open it: Archive (the
+folder icon) > pick a folder > _README.txt.
+
+------------------------------
+ EVERYDAY (no WiFi board needed)
+------------------------------
+- Universal TV / AC remote:
+    Infrared > Universal Remotes
+- Copy your own fob / key:
+    RFID 125kHz > Read > Save > Emulate
+- Offline 2FA codes:
+    Apps > Tools > Authenticator
+- Loyalty-card barcodes on screen:
+    Apps > Tools > Barcode Generator
+- Find a lost bag (AirTag-style):
+    Apps > Bluetooth > FindMy Flipper
+
+------------------------------
+ EACH MENU (all work alone)
+------------------------------
+Sub-GHz . gates, remotes, pagers, sensors
+Infrared  TVs, ACs, projectors, LED strips
+NFC ..... tap cards, bank-card demo, Amiibo
+RFID 125k old fobs / access cards
+iButton . round metal contact keys
+Bad USB . type a payload into a PC
+U2F ..... hardware 2FA key for logins
+
+------------------------------
+ EXTRA - needs the WiFi board
+------------------------------
+WiFi Marauder: Apps > GPIO > WiFi Marauder
+(scan / deauth / capture). The board is
+OPTIONAL - everything above works without it.
+
+------------------------------
+ GOLDEN RULE
+------------------------------
+RF / attacks only on YOUR OWN gear or with
+permission. Pranks = friends only.
+No jamming - illegal everywhere.

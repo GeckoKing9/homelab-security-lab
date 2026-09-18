@@ -1,0 +1,17 @@
+# secrets — never commit real values
+.env
+*.env
+!.env.example
+# captured data — must never be in this repo
+*.cap
+*.pcap
+*.pcapng
+*.hccapx
+*.22000
+*.potfile
+*.hash
+# runtime
+__pycache__/
+*.pyc
+.venv/
+*.log

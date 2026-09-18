@@ -1,0 +1,10 @@
+[Unit]
+Description=WiFi blue-team baseline/anomaly monitor (evil-twin SSID clone detection)
+
+[Service]
+Type=oneshot
+User=homelab
+Group=homelab
+EnvironmentFile=/home/homelab/tools/redteam-toolkit/.env
+WorkingDirectory=/home/homelab/tools/redteam-toolkit
+ExecStart=/usr/bin/python3 wifi_blueteam_monitor.py

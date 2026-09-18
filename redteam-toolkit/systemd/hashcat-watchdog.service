@@ -1,0 +1,10 @@
+[Unit]
+Description=Kill any hashcat process left running past the runtime cap
+
+[Service]
+Type=oneshot
+User=homelab
+Group=homelab
+EnvironmentFile=/home/homelab/tools/redteam-toolkit/.env
+WorkingDirectory=/home/homelab/tools/redteam-toolkit
+ExecStart=/usr/bin/python3 hashcat_watchdog.py

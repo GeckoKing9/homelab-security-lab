@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security Hub — homelab</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    background: #0b0f14; color: #d7e0e8; font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+    margin: 0; padding: 2rem; line-height: 1.5;
+  }
+  h1 { color: #7ee787; margin: 0 0 .25rem; font-size: 1.6rem; }
+  .subtitle { color: #6e7b87; margin-bottom: 1rem; }
+  .intro { background: #11161d; border: 1px solid #232b34; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.5rem; font-size: .9rem; color: #b7c2cc; }
+  .intro b { color: #d7e0e8; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+  .card { background: #11161d; border: 1px solid #232b34; border-radius: 8px; padding: 1rem 1.25rem; }
+  .card h2 { margin: 0 0 .5rem; font-size: 1rem; color: #79c0ff; border-bottom: 1px solid #232b34; padding-bottom: .5rem; }
+  .status-ok { color: #7ee787; }
+  .status-bad { color: #ff7b72; }
+  .status-warn { color: #d29922; }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  td, th { text-align: left; padding: .3rem .4rem; border-bottom: 1px solid #1c232b; vertical-align: top; }
+  th { color: #6e7b87; font-weight: normal; }
+  .note { color: #8b949e; font-size: .8rem; margin: .4rem 0; }
+  a { color: #79c0ff; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .links a { display: block; margin-bottom: .4rem; }
+  form label { display: block; margin: .5rem 0 .1rem; font-size: .85rem; color: #8b949e; }
+  form .field-help { font-size: .78rem; color: #6e7b87; margin-bottom: .2rem; }
+  form input[type=text], form input[type=number] {
+    width: 100%; background: #0b0f14; border: 1px solid #232b34; color: #d7e0e8;
+    padding: .4rem; border-radius: 4px; font-family: inherit;
+  }
+  form button, .btn {
+    margin-top: 1rem; background: #7ee787; color: #0b0f14; border: none; padding: .5rem 1rem;
+    border-radius: 4px; font-weight: bold; cursor: pointer; font-family: inherit; font-size: .85rem;
+  }
+  .btn.secondary { background: #232b34; color: #d7e0e8; }
+  .btn.danger { background: #3d1a1a; color: #ff7b72; }
+  .btn-dl {
+    display: inline-flex; align-items: center; gap: .35rem; margin: 0;
+    background: #1a3d24; color: #7ee787; border: 1px solid #2ea043;
+    padding: .28rem .65rem; border-radius: 6px; font-size: .78rem; font-weight: bold;
+    white-space: nowrap; transition: background .12s ease, color .12s ease;
+  }
+  .btn-dl:hover { background: #2ea043; color: #0b0f14; }
+  .btn-dl svg { display: block; }
+  td.dl-cell { white-space: nowrap; }
+  .confirm { display: flex; align-items: center; gap: .5rem; margin-top: .75rem; color: #d29922; }
+  .full-width { grid-column: 1 / -1; }
+  .badge { display: inline-block; padding: .1rem .5rem; border-radius: 10px; font-size: .72rem; white-space: nowrap; }
+  .badge.on { background: #1a3d24; color: #7ee787; }
+  .badge.off { background: #21262d; color: #8b949e; }
+  .badge.cli { background: #2d2410; color: #d29922; }
+  .badge.web { background: #0f2a3d; color: #79c0ff; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover { background: #161d26; }
+</style>
+</head>
+<body>
+<h1>Security Hub</h1>
+<p class="subtitle">One place for the Pi + Pineapple red/blue toolkit — they're a team, always.</p>
+
+<div class="intro">
+  <b>SSID</b> = a WiFi network's name (e.g. "MyHomeNetwork"). <b>BSSID</b> = the physical MAC
+  address of the specific router/AP radio broadcasting that name (e.g. <code>AA:BB:CC:DD:EE:FF</code>,
+  MyHomeNetwork's real one — not a phone or laptop's MAC). Capture tools target a BSSID, not an
+  SSID, because two APs could theoretically share the same name. Use the
+  <b>"Known WiFi networks"</b> table below — click any row to fill in its BSSID and channel for you.
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>Pineapple status</h2>
+    {% if pineapple.reachable %}
+      <table id="pineapple-status-table">
+        <tr><td>Recon scan</td><td><span class="badge {{ 'on' if pineapple.recon_running else 'off' }}">{{ "running" if pineapple.recon_running else "idle" }}</span></td></tr>
+        <tr><td>Capture</td><td><span class="badge {{ 'on' if pineapple.capture_running else 'off' }}">{{ "running" if pineapple.capture_running else "idle" }}</span></td></tr>
+        <tr><td>Karma mode</td><td>
+          <span class="badge {{ 'on' if pineapple.karma_enabled else 'off' }}">
+            {{ "ON" if pineapple.karma_enabled else "off" }}
+          </span>
+        </td></tr>
+      </table>
+      <p class="note">
+        Recon scan = listens for nearby WiFi networks (auto every 10 min, or "Rescan now" below) ·
+        Capture = actively trying to grab a handshake right now · Karma = answers ANY device
+        looking for a network, not just yours.
+      </p>
+      {% if pineapple.capture_running %}
+      <form action="/stop-capture" method="post" style="margin-top:.25rem;">
+        <button type="submit" class="btn danger" style="margin-top:0;">Stop capture</button>
+      </form>
+      {% endif %}
+      <form action="/toggle-karma" method="post" style="margin-top:.75rem; border-top:1px solid #232b34; padding-top:.75rem;">
+        <input type="hidden" name="enable" value="{{ 'off' if pineapple.karma_enabled else 'on' }}">
+        {% if not pineapple.karma_enabled %}
+        <label style="display:flex; align-items:center; gap:.4rem; font-size:.8rem; color:#d29922;">
+          <input type="checkbox" name="confirm_karma"> I understand Karma answers ALL nearby devices, not just mine
+        </label>
+        {% endif %}
+        <button type="submit" class="btn {{ 'danger' if not pineapple.karma_enabled else 'secondary' }}">
+          {{ "Turn Karma OFF" if pineapple.karma_enabled else "Turn Karma ON" }}
+        </button>
+      </form>
+      <p class="note">Installed infusions: {{ pineapple.installed_modules | join(", ") }}</p>
+    {% else %}
+      <p class="status-bad">Unreachable: {{ pineapple.error }}</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Blue-team baseline (MyHomeNetwork)</h2>
+    <p class="note">Known-good BSSIDs for your own network — a new one appearing here means
+      someone's running an evil twin (a fake AP pretending to be your network).</p>
+    <table id="baseline-table">
+      {% for b in baseline.bssids %}
+      <tr><td>{{ b }}</td></tr>
+      {% else %}
+      <tr><td class="note">no baseline yet — timer runs every 10 min</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Quick links</h2>
+    <div class="links">
+      {% for link in links %}
+      <a href="{{ link.url }}" target="_blank">{{ link.name }} →</a>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="card full-width" style="margin-bottom:1.5rem;">
+  <h2>Known WiFi networks</h2>
+  <p class="note">From the most recent recon scan, strongest signal first. Refreshes every 10 min
+    automatically, or click "Rescan now" for a fresh 25-second look.
+    <b>Click any row to auto-fill the capture form</b> below with that network's BSSID and channel.</p>
+  <form action="/rescan" method="post" style="display:inline;">
+    <button type="submit" class="btn secondary">Rescan now (~25s)</button>
+  </form>
+  <table style="margin-top:.75rem;" id="networks-table">
+    <tr><th>SSID</th><th>BSSID (MAC of the AP)</th><th>Channel</th><th>Signal</th></tr>
+    {% for n in networks %}
+    <tr class="clickable" onclick="fillCapture('{{ n.bssid }}', '{{ n.channel }}')">
+      <td>{{ n.ssid }}</td><td>{{ n.bssid }}</td><td>{{ n.channel }}</td><td>{{ n.signal }} dBm</td>
+    </tr>
+    {% else %}
+    <tr><td class="note" colspan="4">no scan data yet — click "Rescan now" above</td></tr>
+    {% endfor %}
+  </table>
+  <p class="note">Same SSID listed twice = NOT a 2.4GHz/5GHz split (this device only sees 2.4GHz at
+    all) — it's 2 separate physical access points (often a mesh system/extender) broadcasting the
+    same name. Each BSSID is a distinct AP; pick whichever has the stronger signal.</p>
+</div>
+
+<div class="card full-width" style="margin-bottom:1.5rem;">
+  <h2>Launch a handshake capture</h2>
+  <p class="note">Drives the full pipeline: free radio → hcxdumptool PMKID capture on the Pineapple →
+    pull → convert → hashcat crack → report → ntfy notify. Runs in the background; watch progress in
+    "Recent captures" below — it updates itself.</p>
+  <form action="/capture" method="post" id="capture-form">
+    <label>BSSID(s), comma-separated</label>
+    <p class="field-help">The MAC address of the access point(s) to target — not a device MAC.
+      Click a row in "Known WiFi networks" above to fill this in automatically.</p>
+    <input type="text" name="bssids" id="bssids" placeholder="e.g. AA:BB:CC:DD:EE:FF (MyHomeNetwork's real BSSID)" required>
+    <label>Channel(s), comma-separated</label>
+    <p class="field-help">The WiFi channel that BSSID broadcasts on — also filled in automatically
+      by clicking a row above.</p>
+    <input type="text" name="channels" id="channels" placeholder="e.g. 6" required>
+    <label>Capture duration (seconds)</label>
+    <p class="field-help">How long to listen before giving up — 90s is a reasonable default.</p>
+    <input type="number" name="duration" value="90">
+    <label>Crack time budget (seconds)</label>
+    <p class="field-help">How long hashcat is allowed to try cracking the password afterward.</p>
+    <input type="number" name="crack_budget" value="600">
+    <div class="confirm" style="color:#79c0ff;">
+      <input type="checkbox" name="use_deauth" id="use_deauth">
+      <label for="use_deauth" style="margin:0;">Force a reconnection (deauth) partway through —
+        needed if the router validates handshakes properly (confirmed 2026-07-08: passive capture
+        alone got nothing against this network, deauth got real crackable material)</label>
+    </div>
+    <button type="submit">Launch capture</button>
+  </form>
+</div>
+
+<div class="card full-width" style="margin-bottom:1.5rem;">
+  <h2>Recent captures</h2>
+  <table id="captures-table">
+    <tr><th>Run</th><th>Status</th><th>Result</th><th>Crack on GPU</th></tr>
+    {% for c in captures %}
+    <tr>
+      <td>{{ c.when }}</td>
+      <td>{% if c.done %}done{% else %}{{ c.phase }}{% if c.seconds_remaining is defined %} (~{{ c.seconds_remaining }}s left){% endif %}{% endif %}</td>
+      <td>{{ c.result if c.done else "—" }}</td>
+      <td class="dl-cell">{% if c.hash_available %}<a class="btn-dl" href="/download/{{ c.when }}/hash.22000" download title="Download the crackable handshake for GPU cracking"><svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M7.25 1.5v7.19L4.28 5.72 3.22 6.78 8 11.56l4.78-4.78-1.06-1.06-2.97 2.97V1.5h-1.5ZM2.5 13v1h11v-1h-11Z"/></svg>Download</a>{% else %}<span class="note">—</span>{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td class="note" colspan="4">no captures yet</td></tr>
+    {% endfor %}
+  </table>
+  <p class="note">This table refreshes itself automatically every 5 seconds while a capture is running.
+    Click <b>Download</b> (saves to your Windows Downloads folder), then in <code>cmd</code>:<br>
+    <code>cd C:\Users\CRdup\hashcat\hashcat-7.1.2</code><br>
+    <code>hashcat.exe -m 22000 "C:\Users\CRdup\Downloads\&lt;name&gt;.22000" rockyou.txt -r rules\best66.rule -d 1 -w 3</code><br>
+    — replace <code>&lt;name&gt;</code> with the file you just downloaded (or drag it into the cmd
+    window right after typing the opening quote to auto-paste its full path). RTX 4080: rockyou+best66
+    ~25 min for a full pass, rockyou-only ~20s.</p>
+</div>
+
+{% for section in tools %}
+<div class="card full-width" style="margin-bottom:1rem;">
+  <h2>{{ section.category }}</h2>
+  <table>
+    <tr><th>Tool</th><th>Type</th><th>Where</th><th>Notes</th></tr>
+    {% for item in section.entries %}
+    <tr>
+      <td>{{ item.name }}{% if item.link %} <a href="{{ item.link }}" target="_blank">open →</a>{% endif %}</td>
+      <td><span class="badge {{ item.kind }}">{{ "CLI (SSH)" if item.kind == "cli" else "Web GUI" }}</span></td>
+      <td>{{ item.where }}</td>
+      <td class="note">{{ item.note }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endfor %}
+
+<script>
+function fillCapture(bssid, channel) {
+  document.getElementById('bssids').value = bssid;
+  document.getElementById('channels').value = channel;
+  document.getElementById('capture-form').scrollIntoView({behavior: 'smooth', block: 'center'});
+}
+
+function badge(on, onText, offText) {
+  return '<span class="badge ' + (on ? 'on' : 'off') + '">' + (on ? onText : offText) + '</span>';
+}
+
+function renderCaptures(captures) {
+  var table = document.getElementById('captures-table');
+  var rows = '<tr><th>Run</th><th>Status</th><th>Result</th><th>Crack on GPU</th></tr>';
+  if (!captures.length) {
+    rows += '<tr><td class="note" colspan="4">no captures yet</td></tr>';
+  } else {
+    captures.forEach(function(c) {
+      var status = c.done ? 'done' : c.phase + (c.seconds_remaining !== undefined ? ' (~' + c.seconds_remaining + 's left)' : '');
+      var dl = c.hash_available
+        ? '<a class="btn-dl" href="/download/' + encodeURIComponent(c.when) + '/hash.22000" download title="Download the crackable handshake for GPU cracking"><svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M7.25 1.5v7.19L4.28 5.72 3.22 6.78 8 11.56l4.78-4.78-1.06-1.06-2.97 2.97V1.5h-1.5ZM2.5 13v1h11v-1h-11Z"/></svg>Download</a>'
+        : '<span class="note">—</span>';
+      rows += '<tr><td>' + c.when + '</td><td>' + status + '</td><td>' + (c.done ? c.result : '—') + '</td><td class="dl-cell">' + dl + '</td></tr>';
+    });
+  }
+  table.innerHTML = rows;
+}
+
+function renderPineappleStatus(p) {
+  var table = document.getElementById('pineapple-status-table');
+  if (!table || !p.reachable) return;
+  table.innerHTML =
+    '<tr><td>Recon scan</td><td>' + badge(p.recon_running, 'running', 'idle') + '</td></tr>' +
+    '<tr><td>Capture</td><td>' + badge(p.capture_running, 'running', 'idle') + '</td></tr>' +
+    '<tr><td>Karma mode</td><td>' + badge(p.karma_enabled, 'ON', 'off') + '</td></tr>';
+}
+
+function renderNetworks(networks) {
+  var table = document.getElementById('networks-table');
+  var rows = '<tr><th>SSID</th><th>BSSID (MAC of the AP)</th><th>Channel</th><th>Signal</th></tr>';
+  if (!networks.length) {
+    rows += '<tr><td class="note" colspan="4">no scan data yet — click "Rescan now" above</td></tr>';
+  } else {
+    networks.forEach(function(n) {
+      rows += '<tr class="clickable" onclick="fillCapture(\'' + n.bssid + '\', \'' + n.channel + '\')">' +
+        '<td>' + n.ssid + '</td><td>' + n.bssid + '</td><td>' + n.channel + '</td><td>' + n.signal + ' dBm</td></tr>';
+    });
+  }
+  table.innerHTML = rows;
+}
+
+function poll() {
+  fetch('/api/status').then(function(r) { return r.json(); }).then(function(d) {
+    renderCaptures(d.captures);
+    renderPineappleStatus(d.pineapple);
+    renderNetworks(d.networks);
+  }).catch(function() {});
+}
+
+setInterval(poll, 5000);
+</script>
+
+</body>
+</html>

@@ -1,0 +1,16 @@
+[Unit]
+Description=Security Hub — unified Pi + Pineapple toolkit dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=homelab
+Group=homelab
+EnvironmentFile=/home/homelab/tools/redteam-toolkit/.env
+WorkingDirectory=/home/homelab/tools/security-hub
+ExecStart=/usr/bin/python3 app.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

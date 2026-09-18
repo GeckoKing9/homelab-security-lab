@@ -1,0 +1,158 @@
+- category: WiFi capture & crack
+  entries:
+    - name: hcxdumptool (Pineapple GUI infusion)
+      where: Pineapple web UI
+      kind: web
+      link: http://192.168.1.50:1471/#/Modules/hcxdumptool
+      note: Self-service PMKID/handshake capture — click-to-run, no SSH needed
+    - name: handshake_capture.py
+      where: this hub, form below
+      kind: web
+      note: Full automated pipeline — capture, convert, crack, report, notify
+    - name: reaver + pixiewps (WPS/Pixie Dust)
+      where: Pineapple, SSH
+      kind: cli
+      note: "reaver -i wlan1mon -b <bssid> -c <channel> -K 1"
+    - name: aircrack-ng
+      where: Pi, SSH
+      kind: cli
+      note: "aircrack-ng -w rockyou.txt capture.cap  (legacy 4-way handshakes)"
+    - name: hashcat -m 22000
+      where: Pi, SSH
+      kind: cli
+      note: "hashcat -m 22000 hash.22000 rockyou.txt -r best64.rule"
+
+- category: Recon
+  entries:
+    - name: PineAP recon
+      where: Pineapple web UI / API
+      kind: web
+      link: http://192.168.1.50:1471/#/Recon
+      note: Channel-hopping AP/client discovery, feeds the blue-team monitor
+    - name: nmap (Pineapple GUI infusion)
+      where: Pineapple web UI
+      kind: web
+      link: http://192.168.1.50:1471/#/Modules/nmap
+      note: Web GUI for nmap, scan from the Pineapple's vantage point
+    - name: nmap (Pi CLI)
+      where: Pi, SSH
+      kind: cli
+      note: "nmap -sV -A <target>"
+    - name: MACInfo (Pineapple infusion)
+      where: Pineapple web UI
+      kind: web
+      link: http://192.168.1.50:1471/#/Modules/MACInfo
+      note: MAC vendor lookup
+    - name: wigle (Pineapple infusion)
+      where: Pineapple web UI
+      kind: web
+      link: http://192.168.1.50:1471/#/Modules/wigle
+      note: WiGLE.net AP history/geolocation lookup
+    - name: NetAlertX
+      where: SSH-forward — ssh -L 20211:127.0.0.1:20211 homelab
+      kind: web
+      note: Always-on rogue-device ARP monitor, alerts on ntfy homelab-netalert
+
+- category: MITM / traffic interception
+  entries:
+    - name: bettercap
+      where: Pi, SSH
+      kind: cli
+      note: "bettercap -iface eth0 — ARP-spoof, sslstrip2, hstshijack caplets (wired LAN, same segment as the router)"
+    - name: httpeek (Pineapple infusion)
+      where: Pineapple web UI
+      kind: web
+      link: http://192.168.1.50:1471/#/Modules/httpeek
+      note: Live plaintext HTTP viewer for clients associated to the Pineapple
+    - name: ProxyHelper2 (Pineapple infusion)
+      where: Pineapple web UI
+      kind: web
+      link: http://192.168.1.50:1471/#/Modules/ProxyHelper2
+      note: Force an associated client's TCP traffic through Burp Suite Proxy
+    - name: tcpdump (Pineapple GUI infusion)
+      where: Pineapple web UI
+      kind: web
+      link: http://192.168.1.50:1471/#/Modules/tcpdump
+      note: Web GUI packet capture on the Pineapple's interfaces
+    - name: DNSspoof (Pineapple infusion — LIVE drills only)
+      where: Pineapple web UI
+      kind: web
+      link: http://192.168.1.50:1471/#/Modules/DNSspoof
+      note: Own network only, explicit go-ahead each time — see dns-sandbox for practice first
+    - name: dns-sandbox
+      where: Pi, ~/stacks/dns-sandbox
+      kind: cli
+      note: "docker compose up -d — fully isolated practice lab, zero risk to the real network"
+
+- category: Evil twin / rogue AP
+  entries:
+    - name: Evil Portal (Pineapple infusion, installed)
+      where: Pineapple web UI
+      kind: web
+      link: http://192.168.1.50:1471/#/Modules/evilportal
+      note: Captive-portal credential-harvesting drill — configure a campaign before use
+    - name: PineAP Karma mode
+      where: this hub (toggle below) or Pineapple web UI
+      kind: web
+      link: http://192.168.1.50:1471/#/PineAP
+      note: "OFF by default — responds to ALL nearby probing devices, not just yours. Enable deliberately, per session."
+    - name: mdk4 (Pineapple GUI infusion)
+      where: Pineapple web UI
+      kind: web
+      link: http://192.168.1.50:1471/#/Modules/mdk4
+      note: Deauth/flood testing GUI, complements PineAP's own deauth API
+    - name: DenyIP (Pineapple infusion)
+      where: Pineapple web UI
+      kind: web
+      link: http://192.168.1.50:1471/#/Modules/DenyIP
+      note: Client isolation / IP blocking on the Pineapple's rogue AP
+
+- category: Web / CTF (HackerOne, HTB, THM)
+  entries:
+    - name: ffuf / gobuster
+      where: Pi, SSH
+      kind: cli
+      note: "ffuf -u https://target/FUZZ -w seclists/Discovery/Web-Content/raft-large-directories.txt"
+    - name: nikto
+      where: Pi, SSH
+      kind: cli
+      note: "nikto -h https://target"
+    - name: sqlmap
+      where: Pi, SSH
+      kind: cli
+      note: "sqlmap -u '<url>' --batch --dbs"
+    - name: SecLists
+      where: /usr/share/wordlists/seclists on the Pi
+      kind: cli
+      note: Full wordlist collection for the above
+    - name: cabinet (Pineapple infusion)
+      where: Pineapple web UI
+      kind: web
+      link: http://192.168.1.50:1471/#/Modules/cabinet
+      note: Browser-based file manager — browse captures/loot without SSH
+
+- category: Exploitation & credential capture
+  entries:
+    - name: Metasploit Framework
+      where: Pi, SSH
+      kind: cli
+      note: "msfconsole"
+    - name: Responder
+      where: Pi, SSH — ~/tools/Responder (.venv)
+      kind: cli
+      note: LLMNR/NBT-NS poisoning
+
+- category: Blue team (own network defense)
+  entries:
+    - name: wifi_blueteam_monitor.py
+      where: Pi, systemd timer (every 10 min)
+      kind: cli
+      note: Evil-twin SSID clone detection, alerts on ntfy homelab-wifi-ids
+    - name: NetAlertX
+      where: SSH-forward
+      kind: web
+      note: Rogue-device ARP monitor, alerts on ntfy homelab-netalert
+    - name: Uptime Kuma
+      where: dashboard link above
+      kind: web
+      note: Service-health monitoring, alerts on ntfy homelab-alerts
