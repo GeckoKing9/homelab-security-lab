@@ -8,7 +8,9 @@ import time
 from pathlib import Path
 
 import yaml
-from flask import Flask, abort, jsonify, redirect, render_template, request, send_file
+from flask import Flask, Response, abort, jsonify, redirect, render_template, request, send_file
+
+from safeparse import parse_bounded_int, read_json_file
 
 REPO_ROOT = Path(__file__).resolve().parent
 TOOLKIT_ROOT = Path.home() / "tools" / "redteam-toolkit"
@@ -39,9 +41,7 @@ def load_tools():
 
 
 def load_baseline():
-    if BASELINE_FILE.exists():
-        return json.loads(BASELINE_FILE.read_text())
-    return {"bssids": []}
+    return read_json_file(BASELINE_FILE, {"bssids": []})
 
 
 def phase_seconds_remaining(phase, meta):
@@ -67,7 +67,7 @@ def recent_captures(limit=10):
     for run in runs:
         report = run / "report.txt"
         meta_file = run / "meta.json"
-        meta = json.loads(meta_file.read_text()) if meta_file.exists() else {}
+        meta = read_json_file(meta_file, {})
         phase = meta.get("phase", "unknown")
         hash_file = run / "hash.22000"
         entry = {
@@ -155,10 +155,12 @@ def api_status():
 
 
 def exit_node_advertised():
-    out = subprocess.run(["tailscale", "status", "--json"], capture_output=True, text=True)
     try:
+        out = subprocess.run(["tailscale", "status", "--json"],
+                             capture_output=True, text=True, timeout=5)
         return bool(json.loads(out.stdout)["Self"].get("ExitNodeOption"))
     except Exception:
+        # A hung `tailscale` CLI must not wedge the page render; absent/unknown = not advertised.
         return False
 
 
@@ -170,10 +172,13 @@ def widget_exit_node():
 @app.route("/widgets/exit-node/toggle", methods=["POST"])
 def widget_exit_node_toggle():
     enable = "true" if request.form.get("enable") == "on" else "false"
-    result = subprocess.run(
-        ["sudo", "tailscale", "set", f"--advertise-exit-node={enable}"],
-        capture_output=True, text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["sudo", "tailscale", "set", f"--advertise-exit-node={enable}"],
+            capture_output=True, text=True, timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        return "Failed to toggle exit node: tailscale set timed out", 500
     if result.returncode != 0:
         return f"Failed to toggle exit node: {result.stderr}", 500
     return ("", 204)
@@ -228,19 +233,25 @@ def stop_capture_route():
 def capture():
     bssids = [b.strip() for b in request.form.get("bssids", "").split(",") if b.strip()]
     channels = [c.strip() for c in request.form.get("channels", "").split(",") if c.strip()]
-    duration = int(request.form.get("duration", 90))
-    crack_budget = int(request.form.get("crack_budget", 600))
     use_deauth = request.form.get("use_deauth") == "on"
 
     if not bssids or not channels:
         return "Refused: at least one BSSID and channel are required", 400
 
     try:
+        # A crafted POST can send non-numeric or absurd values here; bound them so a bad
+        # field answers 400 instead of a bare int() 500, and so nobody can queue a
+        # negative/day-long capture. 1h capture / 24h crack ceilings are generous headroom.
+        duration = parse_bounded_int(request.form.get("duration"), default=90, lo=1, hi=3600)
+        crack_budget = parse_bounded_int(request.form.get("crack_budget"), default=600, lo=0, hi=86400)
         # validate synchronously first so bad input fails fast, before backgrounding
         validate_bssids(bssids)
         validate_channels(channels)
-    except ValidationError as e:
-        return f"Refused: {e}", 400
+    except (ValidationError, ValueError) as e:
+        # Plain text, not HTML: the message can carry a submitted BSSID/channel, and Flask
+        # serves a returned str as text/html, which would run it as markup in the hub's origin.
+        return Response(f"Refused: {e}", status=400, mimetype="text/plain",
+                        headers={"X-Content-Type-Options": "nosniff"})
 
     def run():
         try:
