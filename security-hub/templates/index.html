@@ -146,7 +146,7 @@
   <table style="margin-top:.75rem;" id="networks-table">
     <tr><th>SSID</th><th>BSSID (MAC of the AP)</th><th>Channel</th><th>Signal</th></tr>
     {% for n in networks %}
-    <tr class="clickable" onclick="fillCapture('{{ n.bssid }}', '{{ n.channel }}')">
+    <tr class="clickable" data-bssid="{{ n.bssid }}" data-channel="{{ n.channel }}">
       <td>{{ n.ssid }}</td><td>{{ n.bssid }}</td><td>{{ n.channel }}</td><td>{{ n.signal }} dBm</td>
     </tr>
     {% else %}
@@ -230,11 +230,28 @@
 {% endfor %}
 
 <script>
+// Scan data (SSID/BSSID/channel), capture phases and report text all originate off this
+// box — an SSID is whatever a nearby AP chooses to broadcast — so every value that reaches
+// innerHTML is HTML-escaped here. Row click targets ride on data-* attributes read by a
+// delegated listener, never on interpolated inline handlers.
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function fillCapture(bssid, channel) {
   document.getElementById('bssids').value = bssid;
   document.getElementById('channels').value = channel;
   document.getElementById('capture-form').scrollIntoView({behavior: 'smooth', block: 'center'});
 }
+
+// One delegated listener on the table survives every innerHTML re-render of its rows.
+document.getElementById('networks-table').addEventListener('click', function(e) {
+  var tr = e.target.closest('tr.clickable');
+  if (!tr) return;
+  fillCapture(tr.dataset.bssid, tr.dataset.channel);
+});
 
 function badge(on, onText, offText) {
   return '<span class="badge ' + (on ? 'on' : 'off') + '">' + (on ? onText : offText) + '</span>';
@@ -247,11 +264,11 @@ function renderCaptures(captures) {
     rows += '<tr><td class="note" colspan="4">no captures yet</td></tr>';
   } else {
     captures.forEach(function(c) {
-      var status = c.done ? 'done' : c.phase + (c.seconds_remaining !== undefined ? ' (~' + c.seconds_remaining + 's left)' : '');
+      var status = c.done ? 'done' : escapeHtml(c.phase) + (c.seconds_remaining !== undefined ? ' (~' + escapeHtml(c.seconds_remaining) + 's left)' : '');
       var dl = c.hash_available
         ? '<a class="btn-dl" href="/download/' + encodeURIComponent(c.when) + '/hash.22000" download title="Download the crackable handshake for GPU cracking"><svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M7.25 1.5v7.19L4.28 5.72 3.22 6.78 8 11.56l4.78-4.78-1.06-1.06-2.97 2.97V1.5h-1.5ZM2.5 13v1h11v-1h-11Z"/></svg>Download</a>'
         : '<span class="note">—</span>';
-      rows += '<tr><td>' + c.when + '</td><td>' + status + '</td><td>' + (c.done ? c.result : '—') + '</td><td class="dl-cell">' + dl + '</td></tr>';
+      rows += '<tr><td>' + escapeHtml(c.when) + '</td><td>' + status + '</td><td>' + (c.done ? escapeHtml(c.result) : '—') + '</td><td class="dl-cell">' + dl + '</td></tr>';
     });
   }
   table.innerHTML = rows;
@@ -273,8 +290,8 @@ function renderNetworks(networks) {
     rows += '<tr><td class="note" colspan="4">no scan data yet — click "Rescan now" above</td></tr>';
   } else {
     networks.forEach(function(n) {
-      rows += '<tr class="clickable" onclick="fillCapture(\'' + n.bssid + '\', \'' + n.channel + '\')">' +
-        '<td>' + n.ssid + '</td><td>' + n.bssid + '</td><td>' + n.channel + '</td><td>' + n.signal + ' dBm</td></tr>';
+      rows += '<tr class="clickable" data-bssid="' + escapeHtml(n.bssid) + '" data-channel="' + escapeHtml(n.channel) + '">' +
+        '<td>' + escapeHtml(n.ssid) + '</td><td>' + escapeHtml(n.bssid) + '</td><td>' + escapeHtml(n.channel) + '</td><td>' + escapeHtml(n.signal) + ' dBm</td></tr>';
     });
   }
   table.innerHTML = rows;
