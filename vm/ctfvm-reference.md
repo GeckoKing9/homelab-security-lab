@@ -24,7 +24,7 @@ policy-routing issue that was also present at the same time.
 
 **Fix (already applied, persists automatically):** `nordvpn set lan-discovery enable`. This is a
 stored daemon setting — NordVPN regenerates its own `ip rule` entries for all RFC1918 ranges
-(`10.0.0.0/8`, `172.16.0.0/12`, `192.168.1.0/16`, `169.254.0.0/16` → table `main`) and its
+(`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16` → table `main`) and its
 `nftables` `table inet nordvpn` LAN-allow rules every time it reconnects, including after a
 reboot. Don't hand-edit that `nftables` table directly (`policy drop` chain named `input`/`output`
 under `table inet nordvpn`) — the daemon owns it and will overwrite manual rules on next connect.
