@@ -5,7 +5,12 @@ numbers and files another process is writing live — can be unit-tested without
 up Flask or the capture toolkit.
 """
 import json
+import logging
+import re
 from pathlib import Path
+
+log = logging.getLogger(__name__)
+_WHOLE_NUMBER = re.compile(r"-?[0-9]+")  # ASCII digits only: no 1_0, +5 or non-ASCII numerals
 
 
 def parse_bounded_int(raw, *, default, lo, hi):
@@ -18,24 +23,37 @@ def parse_bounded_int(raw, *, default, lo, hi):
     """
     if raw is None or str(raw).strip() == "":
         return default
-    try:
-        val = int(str(raw).strip())
-    except (TypeError, ValueError):
-        raise ValueError(f"must be a whole number, got {raw!r}")
+    text = str(raw).strip()
+    if not _WHOLE_NUMBER.fullmatch(text):
+        # The submitted text is deliberately left out of the message: callers show it to the user.
+        raise ValueError("must be a whole number")
+    val = int(text)
     if not (lo <= val <= hi):
         raise ValueError(f"must be between {lo} and {hi}, got {val}")
     return val
 
 
 def read_json_file(path, default):
-    """Read JSON from ``path``, returning ``default`` if it's missing, unreadable, or not
-    valid JSON yet.
+    """Read JSON from ``path``, returning ``default`` if it's missing, unreadable, not valid
+    JSON yet, or not the same kind of value as ``default`` (a ``null`` or a list where the
+    caller expects an object would crash the caller's ``.get``).
 
     meta.json is written live by run_capture while the dashboard polls every few seconds,
     so a half-written file is a normal, expected state — it must degrade to "no data for
-    this run", never crash the whole page.
+    this run", never crash the whole page. Anything else is logged, not swallowed.
     """
     try:
-        return json.loads(Path(path).read_text())
-    except (OSError, ValueError):
+        data = json.loads(Path(path).read_text())
+    except FileNotFoundError:
         return default
+    except ValueError:
+        log.debug("%s is not valid JSON yet (half-written?), using the default", path)
+        return default
+    except OSError as e:
+        log.warning("cannot read %s: %s", path, e)
+        return default
+    if not isinstance(data, type(default)):
+        log.warning("%s holds %s, expected %s; using the default", path,
+                    type(data).__name__, type(default).__name__)
+        return default
+    return data

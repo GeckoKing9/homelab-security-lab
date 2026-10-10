@@ -36,6 +36,22 @@ def test_parse_bounded_int():
             pass
         else:
             raise AssertionError(f"expected ValueError for out-of-range {bad!r}")
+    # only plain ASCII digits count: underscores, a plus sign and non-ASCII numerals are not "whole numbers"
+    for bad in ["1_0", "+5", "\u0663", "\uff11\uff12"]:
+        try:
+            parse_bounded_int(bad, default=90, lo=1, hi=3600)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"expected ValueError for {bad!r}")
+    # the submitted text never comes back in the message (callers show it to the user)
+    hostile = "<img src=x onerror=alert(1)>"
+    try:
+        parse_bounded_int(hostile, default=90, lo=1, hi=3600)
+    except ValueError as e:
+        assert "<" not in str(e) and hostile not in str(e), str(e)
+    else:
+        raise AssertionError("hostile text was accepted")
     # crack_budget allows 0 when lo=0
     assert parse_bounded_int("0", default=600, lo=0, hi=86400) == 0
 
@@ -53,6 +69,11 @@ def test_read_json_file():
         half = d / "half.json"
         half.write_text('{"phase": "captu')
         assert read_json_file(half, {}) == {}
+        # valid JSON of the wrong kind (null / list for an object) -> default, so .get() cannot crash
+        for body in ["null", "[]", "42", '"x"']:
+            wrong = d / "wrong.json"
+            wrong.write_text(body)
+            assert read_json_file(wrong, {}) == {}, body
         # empty file -> default
         empty = d / "empty.json"
         empty.write_text("")
