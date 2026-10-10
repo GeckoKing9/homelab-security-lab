@@ -3,7 +3,7 @@
 Existing tools + researched additions, deduped, ranked by real usefulness,
 each titled with a plain-English description. Emits Netscape HTML (Firefox
 one-click import) + a flat urls.txt for liveness checking."""
-import html, io, re
+import html, io, os, re
 
 def clean(name):
     # strip leading emoji/symbols/whitespace from folder names
@@ -341,10 +341,13 @@ out.write('</DL><p>\n')
 text = out.getvalue()
 
 SCR = "./out"
-open(f"{SCR}/cybersec-master-bookmarks.html", "w", encoding="utf-8").write(text)
+os.makedirs(SCR, exist_ok=True)  # don't crash on a fresh checkout where ./out doesn't exist yet
+with open(f"{SCR}/cybersec-master-bookmarks.html", "w", encoding="utf-8") as f:
+    f.write(text)
 # flat url list for liveness check
 urls = [u for top in TREE.values() for sub in top.values() for _, u in sub]
-open(f"{SCR}/urls.txt", "w").write("\n".join(urls))
+with open(f"{SCR}/urls.txt", "w", encoding="utf-8") as f:
+    f.write("\n".join(urls))
 
 total = len(urls)
 print("top folders:", len(TREE))
