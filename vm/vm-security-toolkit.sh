@@ -171,8 +171,14 @@ VR=$(curl -s https://api.github.com/repos/Velocidex/velociraptor/releases/latest
 # --- HEAVY / OPTIONAL (set INSTALL_HEAVY=1 above) --------------------------
 if [ "$INSTALL_HEAVY" = "1" ]; then
   log "HEAVY: Metasploit"
-  curl -fsSL https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb -o /tmp/msfinstall
-  chmod +x /tmp/msfinstall && sudo /tmp/msfinstall || true
+  # Download to a private mktemp dir, not a fixed /tmp path: a predictable name in
+  # world-writable /tmp lets a local user pre-plant or symlink the file between download
+  # and the `sudo` that runs it. The dir is 0700 and cleaned up after.
+  msfdir="$(mktemp -d)" && msfinstall="$msfdir/msfinstall"
+  if curl -fsSL https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb -o "$msfinstall"; then
+    chmod +x "$msfinstall" && sudo "$msfinstall" || true
+  fi
+  rm -rf "$msfdir"
 
   log "HEAVY: Sliver C2"
   curl https://sliver.sh/install | sudo bash || true
