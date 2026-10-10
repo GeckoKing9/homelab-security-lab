@@ -10,6 +10,9 @@ import sys
 import requests
 
 API = "https://api.tailscale.com/api/v2"
+# (connect, read) seconds. Without this, requests waits forever: a dropped connection or a
+# stalled API would hang this helper (and anything scripting it) with no way out but Ctrl-C.
+HTTP_TIMEOUT = (5, 30)
 
 
 class TailscaleClient:
@@ -26,7 +29,7 @@ class TailscaleClient:
             "client_id": self.client_id,
             "client_secret": self.client_secret,
             "grant_type": "client_credentials",
-        })
+        }, timeout=HTTP_TIMEOUT)
         r.raise_for_status()
         self._token = r.json()["access_token"]
         return self._token
@@ -35,23 +38,23 @@ class TailscaleClient:
         return {"Authorization": f"Bearer {self._get_token()}"}
 
     def devices(self):
-        r = requests.get(f"{API}/tailnet/{self.tailnet}/devices", headers=self._headers())
+        r = requests.get(f"{API}/tailnet/{self.tailnet}/devices", headers=self._headers(), timeout=HTTP_TIMEOUT)
         r.raise_for_status()
         return r.json()["devices"]
 
     def dns_nameservers(self):
-        r = requests.get(f"{API}/tailnet/{self.tailnet}/dns/nameservers", headers=self._headers())
+        r = requests.get(f"{API}/tailnet/{self.tailnet}/dns/nameservers", headers=self._headers(), timeout=HTTP_TIMEOUT)
         r.raise_for_status()
         return r.json().get("dns", [])
 
     def set_dns_nameservers(self, nameservers):
         r = requests.post(f"{API}/tailnet/{self.tailnet}/dns/nameservers",
-                           headers=self._headers(), json={"dns": nameservers})
+                           headers=self._headers(), json={"dns": nameservers}, timeout=HTTP_TIMEOUT)
         r.raise_for_status()
         return r.json()
 
     def dns_preferences(self):
-        r = requests.get(f"{API}/tailnet/{self.tailnet}/dns/preferences", headers=self._headers())
+        r = requests.get(f"{API}/tailnet/{self.tailnet}/dns/preferences", headers=self._headers(), timeout=HTTP_TIMEOUT)
         r.raise_for_status()
         return r.json()
 
