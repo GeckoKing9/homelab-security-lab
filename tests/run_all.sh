@@ -14,6 +14,7 @@ run() {
 run python3 "$here/test_safeparse.py"
 run python3 "$here/test_tailscale_timeout.py"
 run python3 "$here/test_index_template.py"
+run python3 "$here/test_hub_capture_errors.py"
 run python3 "$here/test_bookmarks.py"
 run node "$here/test_xss_escape.js"
 

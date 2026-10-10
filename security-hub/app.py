@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 import yaml
-from flask import Flask, abort, jsonify, redirect, render_template, request, send_file
+from flask import Flask, Response, abort, jsonify, redirect, render_template, request, send_file
 
 from safeparse import parse_bounded_int, read_json_file
 
@@ -248,7 +248,10 @@ def capture():
         validate_bssids(bssids)
         validate_channels(channels)
     except (ValidationError, ValueError) as e:
-        return f"Refused: {e}", 400
+        # Plain text, not HTML: the message can carry a submitted BSSID/channel, and Flask
+        # serves a returned str as text/html, which would run it as markup in the hub's origin.
+        return Response(f"Refused: {e}", status=400, mimetype="text/plain",
+                        headers={"X-Content-Type-Options": "nosniff"})
 
     def run():
         try:
