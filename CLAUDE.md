@@ -23,6 +23,8 @@ rules the whole lab is held to. The orientation doc for any new session.
   serialized text (see `writeups/`).
 - `security-hub` escapes untrusted scan/capture data (BSSIDs, channels, form
   values) or serves it `text/plain`, never raw HTML — DOM XSS is its recurring bug.
+- Private-range CIDR is `192.168.0.0/16`; `unbound-pi-hole.conf` and the `vm/`
+  docs must agree on it — a wrong or mismatched CIDR has needed correcting twice.
 
 ## Done means
 - Off-hardware changes: `bash tests/run_all.sh` prints ALL PASS. No framework; each
