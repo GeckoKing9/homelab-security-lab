@@ -10,9 +10,13 @@ exit, which would drop these entries. Re-running is safe: managed entries are re
 your own on/off and output choices, other extensions are left alone, Pro-only BApps never go
 into the Community config.
 
-  python3 burp-extensions.py          install everything below
-  python3 burp-extensions.py --list   print the list, change nothing
+Order: download everything into <uuid>.new staging folders, check Burp is still closed and
+every config is readable, then swap each folder in (rollback on error), then write the configs.
+
+  burp-extensions          install everything below (the toolkit installs it in /usr/local/bin)
+  burp-extensions --list   print the list, change nothing
 """
+import contextlib
 import datetime
 import hashlib
 import io
@@ -66,17 +70,24 @@ def fetch(url):
 
 
 def burp_running():
+    """True if a Burp jar or launcher (burpsuite*.jar, .../BurpSuite) is in any other process's argv."""
     me = str(os.getpid())
     for proc in Path("/proc").glob("[0-9]*/cmdline"):
         if proc.parent.name == me:
             continue
         try:
-            args = proc.read_bytes().lower().split(b"\0")
+            args = proc.read_bytes().split(b"\0")
         except OSError:
             continue
-        if any(b"burpsuite" in a for a in args):
+        if any(is_burp_arg(a) for a in args):
             return True
     return False
+
+
+def is_burp_arg(arg):
+    """burpsuite_pro.jar, burpsuite_community.jar, .../BurpSuiteCommunity/BurpSuite; not ~/.BurpSuite paths."""
+    base = os.path.basename(arg).lower()
+    return base.startswith(b"burpsuite") and (base.endswith(b".jar") or base == b"burpsuite")
 
 
 def entry(name, path, ext_type, loaded, uuid=None, serial=None):
@@ -87,8 +98,8 @@ def entry(name, path, ext_type, loaded, uuid=None, serial=None):
     return e
 
 
-def install_bapp(uuid, loaded):
-    """Download one BApp, unpack it into a fresh bapps/<uuid>/, return (config entry, pro_only)."""
+def download_bapp(uuid, loaded):
+    """Download one BApp into bapps/<uuid>.new. Nothing live changes. Returns (entry, pro_only, staging, dest)."""
     page = fetch(f"{STORE}/{uuid}").decode("utf-8", "replace")
     m = re.search(rf"{re.escape(STORE)}/bapps/download/{uuid}/\d+", page)
     if not m:
@@ -99,57 +110,107 @@ def install_bapp(uuid, loaded):
     missing = [k for k in ("Name", "EntryPoint", "SerialVersion") if not manifest.get(k)]
     if missing:
         raise RuntimeError(f"manifest lacks {', '.join(missing)}")
+    entry_point = manifest["EntryPoint"]
+    if entry_point not in bapp.namelist():
+        raise RuntimeError(f"EntryPoint {entry_point!r} is not in the BApp zip")
     dest = BURP_DIR / "bapps" / uuid
-    entry_file = (dest / manifest["EntryPoint"]).resolve()
+    entry_file = (dest / entry_point).resolve()
     if not entry_file.is_relative_to(dest.resolve()):
-        raise RuntimeError(f"EntryPoint {manifest['EntryPoint']!r} points outside the BApp folder")
+        raise RuntimeError(f"EntryPoint {entry_point!r} points outside the BApp folder")
     staging = dest.with_name(uuid + ".new")
     shutil.rmtree(staging, ignore_errors=True)
     bapp.extractall(staging)
-    shutil.rmtree(dest, ignore_errors=True)  # drop the old version's files, as the store does
-    staging.rename(dest)
     ext_type = EXT_TYPES.get(manifest.get("ExtensionType", "1"), "java")
     e = entry(manifest["Name"], entry_file, ext_type, loaded, uuid, int(manifest["SerialVersion"]))
-    return e, manifest.get("ProOnly", "").lower() == "true"
+    return e, manifest.get("ProOnly", "").lower() == "true", staging, dest
 
 
-def install_jar(name, url, sha256, loaded):
+def download_jar(name, url, sha256, loaded):
+    """Download a pinned jar into extensions/<name>.jar.new. Returns (entry, pro_only, staging, dest)."""
     data = fetch(url)
     got = hashlib.sha256(data).hexdigest()
     if got != sha256:
         raise RuntimeError(f"sha256 mismatch: got {got}")
     dest = BURP_DIR / "extensions" / f"{name}.jar"
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(data)
-    return entry(name, dest, "java", loaded), False
+    staging = dest.with_name(dest.name + ".new")
+    staging.write_bytes(data)
+    return entry(name, dest, "java", loaded), False, staging, dest
 
 
-def ext_key(e):
-    """BApps are matched by uuid, other jars by name (a hand-added copy is the same extension)."""
-    return e.get("bapp_uuid") or e.get("name")
+def discard(staging):
+    if staging.is_dir():
+        shutil.rmtree(staging, ignore_errors=True)
+    else:
+        with contextlib.suppress(FileNotFoundError):
+            staging.unlink()
+
+
+def swap_in(staging, dest):
+    """Put staging in place of dest. If that fails, the previous dest is restored untouched."""
+    if staging.is_file():
+        os.replace(staging, dest)
+        return
+    old = dest.with_name(dest.name + ".old")
+    shutil.rmtree(old, ignore_errors=True)
+    if dest.exists():
+        dest.rename(old)  # raises (nothing changed yet) if a stale .old could not be cleared
+    try:
+        staging.rename(dest)
+    except OSError:
+        if old.exists():
+            old.rename(dest)
+        raise
+    shutil.rmtree(old, ignore_errors=True)
+
+
+def same_ext(old, new):
+    """BApps match by uuid; other jars by name or by file (a renamed or hand-added copy is the same one)."""
+    if new.get("bapp_uuid"):
+        return old.get("bapp_uuid") == new["bapp_uuid"]
+    return not old.get("bapp_uuid") and (old.get("name") == new["name"]
+                                         or old.get("extension_file") == new["extension_file"])
+
+
+KEEP = ("loaded", "output", "errors")  # the user's own choices survive a re-run
 
 
 def merge_config(cfg, new, community):
-    """Return a copy of cfg with the managed entries refreshed; keep the user's own choices."""
+    """Return a copy of cfg with the managed entries refreshed; Pro-only BApps never go into Community."""
     old = cfg.get("user_options", {}).get("extender", {}).get("extensions", [])
-    prev = {ext_key(e): e for e in old}
-    managed = {ext_key(e) for e, _ in new}
-    exts = [e for e in old if ext_key(e) not in managed]
+    exts = [o for o in old if not any(same_ext(o, e) for e, _ in new)]
     for e, pro_only in new:
         if community and pro_only:
             continue
-        kept = {k: prev[ext_key(e)][k] for k in ("loaded", "output", "errors") if k in prev.get(ext_key(e), {})}
-        exts.append({**e, **kept})
+        prev = next((o for o in old if same_ext(o, e)), {})
+        exts.append({**e, **{k: prev[k] for k in KEEP if k in prev}})
     opts = cfg.get("user_options", {})
     return {**cfg, "user_options": {**opts, "extender": {**opts.get("extender", {}), "extensions": exts}}}
 
 
+def load_config(path):
+    cfg = json.loads(path.read_text())
+    opts = cfg.get("user_options", {}) if isinstance(cfg, dict) else None
+    ext = opts.get("extender", {}) if isinstance(opts, dict) else None
+    if not isinstance(ext, dict) or not isinstance(ext.get("extensions", []), list):
+        raise ValueError("unexpected structure under user_options.extender")
+    return cfg
+
+
 def save_json(path, data):
-    """Write via a temp file + rename so a crash never leaves Burp a truncated config."""
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(data, indent=4))
-    os.chmod(tmp, path.stat().st_mode & 0o777 if path.exists() else 0o600)
-    os.replace(tmp, path)
+    """Write through a symlinked config, never leave it truncated, keep its mode from the first byte."""
+    target = path.resolve()
+    mode = target.stat().st_mode & 0o777 if target.exists() else 0o600
+    tmp = target.with_name(target.name + ".tmp")
+    with contextlib.suppress(FileNotFoundError):
+        tmp.unlink()
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
+    with os.fdopen(fd, "w") as f:
+        os.fchmod(f.fileno(), mode)  # umask may have removed bits; never adds any beyond the original
+        f.write(json.dumps(data, indent=4))
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, target)
 
 
 def jython_set(cfg):
@@ -171,28 +232,44 @@ def main():
         print(f"No UserConfig*.json in {BURP_DIR}: start Burp once, close it, then re-run.")
         return 1
 
-    new, failed = [], []
-    jobs = [(name, partial(install_bapp, uuid, loaded)) for uuid, name, loaded, _ in BAPPS]
-    jobs += [(name, partial(install_jar, name, url, sha, loaded)) for name, url, sha, loaded, _ in JARS]
+    staged, failed = [], []
+    jobs = [(name, partial(download_bapp, uuid, loaded)) for uuid, name, loaded, _ in BAPPS]
+    jobs += [(name, partial(download_jar, name, url, sha, loaded)) for name, url, sha, loaded, _ in JARS]
     for name, job in jobs:
         try:
-            new.append(job())
-            print(f"ok    {name}")
+            staged.append((name, *job()))
+            print(f"got   {name}")
         except Exception as e:  # keep going: one dead download must not block the rest
             failed.append(name)
             print(f"FAIL  {name}: {e}")
 
+    cfgs, abort = [], None
     if burp_running():  # the downloads take a while; Burp may have been started meanwhile
-        print("Burp was started during the downloads: close it and re-run. No config was changed.")
-        return 1
-    stamp = datetime.date.today().strftime("%Y%m%d")
-    for cfg_path in configs:
+        abort = "Burp was started during the downloads: close it and re-run."
+    for cfg_path in configs if not abort else []:
         try:
-            cfg = json.loads(cfg_path.read_text())
+            cfgs.append((cfg_path, load_config(cfg_path)))
         except (OSError, ValueError) as e:
-            failed.append(cfg_path.name)
-            print(f"FAIL  {cfg_path}: unreadable ({e}); left untouched")
-            continue
+            abort = f"{cfg_path} is unreadable ({e}): fix or move it, then re-run."
+    if abort:
+        for *_, staging, _ in staged:
+            discard(staging)
+        print(f"{abort} Nothing was changed.")
+        return 1
+
+    new = []
+    for name, e, pro_only, staging, dest in staged:
+        try:
+            swap_in(staging, dest)
+            new.append((e, pro_only))
+            print(f"ok    {name}")
+        except OSError as err:
+            discard(staging)
+            failed.append(name)
+            print(f"FAIL  {name}: could not replace {dest} ({err}); previous version kept")
+
+    stamp = datetime.date.today().strftime("%Y%m%d")
+    for cfg_path, cfg in cfgs:
         backup = cfg_path.with_name(f"{cfg_path.name}.bak-{stamp}")
         if not backup.exists():
             shutil.copy2(cfg_path, backup)

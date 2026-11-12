@@ -68,7 +68,7 @@ BLUE-TEAM / DFIR / MALWARE
   velociraptor gui            endpoint DFIR & hunting (~/tools/velociraptor)
 
 BURP + FIREFOX  (Phase 5b)
-  python3 vm/burp-extensions.py --list   the Burp extension set and which start on/off
+  burp-extensions --list      the Burp extension set and which start on/off (burp-extensions = install)
   Firefox add-ons: PwnFox + the pentest set, by policy in /etc/firefox/policies/policies.json
 
 HEAVY (only if INSTALL_HEAVY=1)
@@ -175,14 +175,21 @@ VR=$(curl -s https://api.github.com/repos/Velocidex/velociraptor/releases/latest
 # --- PHASE 5b: Burp extensions + Firefox add-ons ---------------------------
 log "Phase 5b: Burp extensions + Firefox pentest add-ons"
 # Burp: needs ~/.BurpSuite to exist (start Burp once, close it). The script refuses while Burp runs.
+# Installed as the `burp-extensions` command so `burp-extensions --list` works from anywhere.
+PHASE_FAILS="${PHASE_FAILS:-}"
 BURPX="$(dirname "$0")/burp-extensions.py"
-if [ ! -f "$BURPX" ]; then echo "  SKIPPED Burp extensions: $BURPX not found (keep the toolkit next to burp-extensions.py)"
-elif [ -d ~/.BurpSuite ]; then python3 -I "$BURPX" || echo "  Burp extensions incomplete: see FAIL lines above"
-else echo "  Burp not set up yet: start Burp once, close it, then run: python3 $BURPX"; fi
+if [ ! -f "$BURPX" ]; then
+  echo "  Burp extensions NOT installed: $BURPX not found (keep the toolkit next to burp-extensions.py)"
+  PHASE_FAILS="$PHASE_FAILS burp-extensions"
+else
+  sudo install -m 755 "$BURPX" /usr/local/bin/burp-extensions
+  if [ ! -d ~/.BurpSuite ]; then echo "  Burp not set up yet: start Burp once, close it, then run: burp-extensions"
+  elif ! burp-extensions; then echo "  Burp extensions NOT fully installed: see its output above"; PHASE_FAILS="$PHASE_FAILS burp-extensions"; fi
+fi
 # Firefox (Ubuntu snap reads /etc/firefox/policies): installs each add-on for every profile on next start.
 sudo mkdir -p /etc/firefox/policies
-sudo python3 -I - <<'PY'
-import datetime, json, os, shutil
+sudo python3 -I - <<'PY' || PHASE_FAILS="$PHASE_FAILS firefox-policy"
+import datetime, json, os, shutil, sys
 p = "/etc/firefox/policies/policies.json"
 addons = {  # AMO GUID -> AMO slug
     "foxyproxy@eric.h.jung": "foxyproxy-standard", "wappalyzer@crunchlabz.com": "wappalyzer",
@@ -191,17 +198,24 @@ addons = {  # AMO GUID -> AMO slug
     "{a6c4a591-f1b2-4f03-b3ff-767e5bedf4e7}": "user-agent-string-switcher",
     "{531906d3-e22f-4a6c-a102-8057b88a1a63}": "single-file", "PwnFox@bi.tk": "pwnfox",
 }
-d = json.load(open(p)) if os.path.exists(p) else {}
-ext = d.setdefault("policies", {}).setdefault("ExtensionSettings", {})
+try:
+    d = json.load(open(p)) if os.path.exists(p) else {}
+    ext = d.setdefault("policies", {}).setdefault("ExtensionSettings", {})
+except (ValueError, AttributeError) as e:
+    sys.exit(f"  Firefox policy NOT changed: {p} is not a valid policies file ({e})")
 ext.setdefault("*", {"installation_mode": "allowed"})
-for guid, slug in addons.items():  # setdefault: an entry you already set (blocked, force_installed) wins
-    ext.setdefault(guid, {"installation_mode": "normal_installed",
-                          "install_url": f"https://addons.mozilla.org/firefox/downloads/latest/{slug}/latest.xpi"})
+for guid, slug in addons.items():
+    # refresh entries this kit wrote (normal_installed); one you set by hand (blocked, force_installed) wins
+    if ext.get(guid, {}).get("installation_mode", "normal_installed") == "normal_installed":
+        ext[guid] = {"installation_mode": "normal_installed",
+                     "install_url": f"https://addons.mozilla.org/firefox/downloads/latest/{slug}/latest.xpi"}
 bak = f"{p}.bak-{datetime.date.today():%Y%m%d}"
 if os.path.exists(p) and not os.path.exists(bak):
     shutil.copy2(p, bak)
 with open(p + ".tmp", "w") as f:
     json.dump(d, f, indent=2)
+    f.flush()
+    os.fsync(f.fileno())
 os.chmod(p + ".tmp", 0o644)
 os.replace(p + ".tmp", p)
 print(f"  {len(addons)} Firefox add-ons in {p} (restart Firefox to apply)")
@@ -241,3 +255,4 @@ for t in nmap sqlmap hashcat john nuclei subfinder httpx ffuf amass \
 done
 log "Done. Open a new shell (or 'source ~/.bashrc') so PATH picks up new tools."
 echo "Blue-team platforms (MISP/OpenCTI) are Docker stacks — say the word and I'll add compose files."
+if [ -n "${PHASE_FAILS:-}" ]; then echo "INCOMPLETE:${PHASE_FAILS} (see above)"; exit 1; fi
