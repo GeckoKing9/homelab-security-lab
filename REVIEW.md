@@ -16,3 +16,4 @@ Bug classes seen:
 - Pro-only Burp extensions written into the Community config (2026-11).
 - Failure hidden by `|| true` in the toolkit (2026-11).
 - Unrequested whitespace change slipped into a catalog line (2026-11).
+- Live files replaced before the last abort check, so an abort still left changes (BApp folders swapped before the Burp re-check, 2026-11).

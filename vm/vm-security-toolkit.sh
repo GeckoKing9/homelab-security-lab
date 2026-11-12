@@ -175,7 +175,8 @@ VR=$(curl -s https://api.github.com/repos/Velocidex/velociraptor/releases/latest
 # --- PHASE 5b: Burp extensions + Firefox add-ons ---------------------------
 log "Phase 5b: Burp extensions + Firefox pentest add-ons"
 # Burp: needs ~/.BurpSuite to exist (start Burp once, close it). The script refuses while Burp runs.
-# Installed as the `burp-extensions` command so `burp-extensions --list` works from anywhere.
+# Also installed as the `burp-extensions` command so `burp-extensions --list` works from anywhere;
+# the toolkit itself runs the repo copy with python3 -I (no PYTHON* env, no cwd imports).
 PHASE_FAILS="${PHASE_FAILS:-}"
 BURPX="$(dirname "$0")/burp-extensions.py"
 if [ ! -f "$BURPX" ]; then
@@ -184,7 +185,7 @@ if [ ! -f "$BURPX" ]; then
 else
   sudo install -m 755 "$BURPX" /usr/local/bin/burp-extensions
   if [ ! -d ~/.BurpSuite ]; then echo "  Burp not set up yet: start Burp once, close it, then run: burp-extensions"
-  elif ! burp-extensions; then echo "  Burp extensions NOT fully installed: see its output above"; PHASE_FAILS="$PHASE_FAILS burp-extensions"; fi
+  elif ! python3 -I "$BURPX"; then echo "  Burp extensions NOT fully installed: see its output above"; PHASE_FAILS="$PHASE_FAILS burp-extensions"; fi
 fi
 # Firefox (Ubuntu snap reads /etc/firefox/policies): installs each add-on for every profile on next start.
 sudo mkdir -p /etc/firefox/policies
