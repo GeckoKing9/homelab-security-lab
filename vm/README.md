@@ -19,6 +19,9 @@ if they already have something that solves the problem** (see memory
   git (Notion workspace ID, personal course paths); the user's live browser copy still has them.
 - **`build_master_bookmarks.py`** — generator for the HTML above. Full `TREE` dict of every tool +
   description; edit here and re-run to regenerate. This is the editable source; the HTML is output.
+- **`burp-extensions.py`** — installs the curated Burp extension set (BApp Store + pinned PwnFox
+  jar) the way the BApp Store does, on or off per extension; `--list` shows the set. Close Burp
+  first. Called by the toolkit's Phase 5b, which also sets the Firefox add-ons by enterprise policy.
 - **`vm-security-toolkit.sh`** — phased installer for the matching CLI arsenal on the VM.
   `INSTALL_HEAVY=0` toggle at top gates the big/slow installs. Also installs a permanent
   `sectools` reference command and a `newtool` bash helper (venv-per-cloned-repo, dodges

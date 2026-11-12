@@ -67,8 +67,15 @@ BLUE-TEAM / DFIR / MALWARE
   clamscan -r <path>          antivirus scan
   velociraptor gui            endpoint DFIR & hunting (~/tools/velociraptor)
 
+BURP + FIREFOX  (python3 burp-extensions.py --list = the Burp set, on/off)
+  Burp on:  Auth Analyzer, Hackvertor, JS Miner, JWT Editor, Param Miner, Active Scan++, Copy As Python-Requests, PwnFox
+  Burp off: Turbo Intruder, HTTP Request Smuggler, SSPP Scanner, AI Prompt Fuzzer, Postman Importer,
+            Collaborator Everywhere, SAML Raider  (tick in Extensions > Installed when the job needs it)
+  Firefox:  PwnFox (containers -> coloured in Burp), FoxyProxy, Wappalyzer, Cookie-Editor, HackTools, DotGit,
+            Retire.js, User-Agent Switcher, SingleFile
+
 HEAVY (only if INSTALL_HEAVY=1)
-  msfconsole                  Metasploit exploitation framework
+  msfconsole                 Metasploit exploitation framework
   sliver-server               Sliver C2 framework
   /usr/share/seclists         the SecLists wordlist collection
 CATEOF
@@ -167,6 +174,34 @@ sudo apt-get install -y suricata clamav
 # Velociraptor (single static binary)
 VR=$(curl -s https://api.github.com/repos/Velocidex/velociraptor/releases/latest | grep -o 'https.*linux-amd64' | head -1)
 [ -n "$VR" ] && wget -qO ~/tools/velociraptor "$VR" && chmod +x ~/tools/velociraptor || true
+
+# --- PHASE 5b: Burp extensions + Firefox add-ons ---------------------------
+log "Phase 5b: Burp extensions + Firefox pentest add-ons"
+# Burp: needs ~/.BurpSuite to exist (start Burp once, close it). The script refuses while Burp runs.
+BURPX="$(dirname "$0")/burp-extensions.py"
+if [ -d ~/.BurpSuite ]; then python3 -I "$BURPX" || true
+else echo "  Burp not set up yet: start Burp once, close it, then run: python3 $BURPX"; fi
+# Firefox (Ubuntu snap reads /etc/firefox/policies): installs each add-on for every profile on next start.
+sudo mkdir -p /etc/firefox/policies
+sudo python3 -I - <<'PY'
+import json, os
+p = "/etc/firefox/policies/policies.json"
+addons = {  # AMO GUID -> AMO slug
+    "foxyproxy@eric.h.jung": "foxyproxy-standard", "wappalyzer@crunchlabz.com": "wappalyzer",
+    "{c3c10168-4186-445c-9c5b-63f12b8e2c87}": "cookie-editor", "{f1423c11-a4e2-4709-a0f8-6d6a68c83d08}": "hacktools",
+    "{84cbda23-345f-4e74-9695-9a52b9599dc0}": "dotgit", "@retire.js": "retire-js",
+    "{a6c4a591-f1b2-4f03-b3ff-767e5bedf4e7}": "user-agent-string-switcher",
+    "{531906d3-e22f-4a6c-a102-8057b88a1a63}": "single-file", "PwnFox@bi.tk": "pwnfox",
+}
+d = json.load(open(p)) if os.path.exists(p) else {}
+ext = d.setdefault("policies", {}).setdefault("ExtensionSettings", {})
+ext.setdefault("*", {"installation_mode": "allowed"})
+for guid, slug in addons.items():
+    ext[guid] = {"installation_mode": "normal_installed",
+                 "install_url": f"https://addons.mozilla.org/firefox/downloads/latest/{slug}/latest.xpi"}
+json.dump(d, open(p, "w"), indent=2)
+print(f"  {len(addons)} Firefox add-ons in {p} (restart Firefox to apply)")
+PY
 
 # --- HEAVY / OPTIONAL (set INSTALL_HEAVY=1 above) --------------------------
 if [ "$INSTALL_HEAVY" = "1" ]; then
