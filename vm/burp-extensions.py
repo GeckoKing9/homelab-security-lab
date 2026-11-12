@@ -6,7 +6,9 @@ declared in every UserConfig*.json that exists (Pro and/or Community), so Burp l
 its next start. Non-store jars (PwnFox) are pinned by URL and SHA-256.
 
 Close Burp before running it: Burp keeps its user config in memory and can write it back on
-exit, which would drop these entries. Re-running is safe (entries are replaced, not doubled).
+exit, which would drop these entries. Re-running is safe: managed entries are refreshed but keep
+your own on/off and output choices, other extensions are left alone, Pro-only BApps never go
+into the Community config.
 
   python3 burp-extensions.py          install everything below
   python3 burp-extensions.py --list   print the list, change nothing
@@ -15,10 +17,13 @@ import datetime
 import hashlib
 import io
 import json
+import os
 import re
+import shutil
 import sys
 import urllib.request
 import zipfile
+from functools import partial
 from pathlib import Path
 
 BURP_DIR = Path.home() / ".BurpSuite"
@@ -61,12 +66,15 @@ def fetch(url):
 
 
 def burp_running():
+    me = str(os.getpid())
     for proc in Path("/proc").glob("[0-9]*/cmdline"):
+        if proc.parent.name == me:
+            continue
         try:
-            args = proc.read_bytes().split(b"\0")
+            args = proc.read_bytes().lower().split(b"\0")
         except OSError:
             continue
-        if any(a.endswith(b".jar") and b"burpsuite" in a.lower() for a in args):
+        if any(b"burpsuite" in a for a in args):
             return True
     return False
 
@@ -80,17 +88,29 @@ def entry(name, path, ext_type, loaded, uuid=None, serial=None):
 
 
 def install_bapp(uuid, loaded):
+    """Download one BApp, unpack it into a fresh bapps/<uuid>/, return (config entry, pro_only)."""
     page = fetch(f"{STORE}/{uuid}").decode("utf-8", "replace")
     m = re.search(rf"{re.escape(STORE)}/bapps/download/{uuid}/\d+", page)
     if not m:
         raise RuntimeError("no download link on the BApp page")
     bapp = zipfile.ZipFile(io.BytesIO(fetch(m.group(0))))
-    manifest = dict(line.split(": ", 1) for line in bapp.read("BappManifest.bmf").decode().splitlines() if ": " in line)
+    manifest = {k.strip(): v.strip() for k, v in (line.split(":", 1) for line in
+                bapp.read("BappManifest.bmf").decode().splitlines() if ":" in line)}
+    missing = [k for k in ("Name", "EntryPoint", "SerialVersion") if not manifest.get(k)]
+    if missing:
+        raise RuntimeError(f"manifest lacks {', '.join(missing)}")
     dest = BURP_DIR / "bapps" / uuid
-    bapp.extractall(dest)
-    ext_type = EXT_TYPES.get(manifest.get("ExtensionType", "1").strip(), "java")
-    return entry(manifest["Name"].strip(), dest / manifest["EntryPoint"].strip(), ext_type, loaded,
-                 uuid, int(manifest["SerialVersion"]))
+    entry_file = (dest / manifest["EntryPoint"]).resolve()
+    if not entry_file.is_relative_to(dest.resolve()):
+        raise RuntimeError(f"EntryPoint {manifest['EntryPoint']!r} points outside the BApp folder")
+    staging = dest.with_name(uuid + ".new")
+    shutil.rmtree(staging, ignore_errors=True)
+    bapp.extractall(staging)
+    shutil.rmtree(dest, ignore_errors=True)  # drop the old version's files, as the store does
+    staging.rename(dest)
+    ext_type = EXT_TYPES.get(manifest.get("ExtensionType", "1"), "java")
+    e = entry(manifest["Name"], entry_file, ext_type, loaded, uuid, int(manifest["SerialVersion"]))
+    return e, manifest.get("ProOnly", "").lower() == "true"
 
 
 def install_jar(name, url, sha256, loaded):
@@ -101,7 +121,35 @@ def install_jar(name, url, sha256, loaded):
     dest = BURP_DIR / "extensions" / f"{name}.jar"
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(data)
-    return entry(name, dest, "java", loaded)
+    return entry(name, dest, "java", loaded), False
+
+
+def ext_key(e):
+    """BApps are matched by uuid, other jars by name (a hand-added copy is the same extension)."""
+    return e.get("bapp_uuid") or e.get("name")
+
+
+def merge_config(cfg, new, community):
+    """Return a copy of cfg with the managed entries refreshed; keep the user's own choices."""
+    old = cfg.get("user_options", {}).get("extender", {}).get("extensions", [])
+    prev = {ext_key(e): e for e in old}
+    managed = {ext_key(e) for e, _ in new}
+    exts = [e for e in old if ext_key(e) not in managed]
+    for e, pro_only in new:
+        if community and pro_only:
+            continue
+        kept = {k: prev[ext_key(e)][k] for k in ("loaded", "output", "errors") if k in prev.get(ext_key(e), {})}
+        exts.append({**e, **kept})
+    opts = cfg.get("user_options", {})
+    return {**cfg, "user_options": {**opts, "extender": {**opts.get("extender", {}), "extensions": exts}}}
+
+
+def save_json(path, data):
+    """Write via a temp file + rename so a crash never leaves Burp a truncated config."""
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(data, indent=4))
+    os.chmod(tmp, path.stat().st_mode & 0o777 if path.exists() else 0o600)
+    os.replace(tmp, path)
 
 
 def jython_set(cfg):
@@ -124,35 +172,37 @@ def main():
         return 1
 
     new, failed = [], []
-    for uuid, name, loaded, _ in BAPPS:
+    jobs = [(name, partial(install_bapp, uuid, loaded)) for uuid, name, loaded, _ in BAPPS]
+    jobs += [(name, partial(install_jar, name, url, sha, loaded)) for name, url, sha, loaded, _ in JARS]
+    for name, job in jobs:
         try:
-            new.append(install_bapp(uuid, loaded))
+            new.append(job())
             print(f"ok    {name}")
         except Exception as e:  # keep going: one dead download must not block the rest
             failed.append(name)
             print(f"FAIL  {name}: {e}")
-    for name, url, sha, loaded, _ in JARS:
-        try:
-            new.append(install_jar(name, url, sha, loaded))
-            print(f"ok    {name}")
-        except Exception as e:
-            failed.append(name)
-            print(f"FAIL  {name}: {e}")
 
+    if burp_running():  # the downloads take a while; Burp may have been started meanwhile
+        print("Burp was started during the downloads: close it and re-run. No config was changed.")
+        return 1
     stamp = datetime.date.today().strftime("%Y%m%d")
     for cfg_path in configs:
+        try:
+            cfg = json.loads(cfg_path.read_text())
+        except (OSError, ValueError) as e:
+            failed.append(cfg_path.name)
+            print(f"FAIL  {cfg_path}: unreadable ({e}); left untouched")
+            continue
         backup = cfg_path.with_name(f"{cfg_path.name}.bak-{stamp}")
         if not backup.exists():
-            backup.write_bytes(cfg_path.read_bytes())
-        cfg = json.loads(cfg_path.read_text())
-        exts = cfg.setdefault("user_options", {}).setdefault("extender", {}).setdefault("extensions", [])
-        keys = {e.get("bapp_uuid") or e["extension_file"] for e in new}
-        exts[:] = [e for e in exts if (e.get("bapp_uuid") or e.get("extension_file")) not in keys] + new
-        cfg_path.write_text(json.dumps(cfg, indent=4))
-        py = [e["name"] for e in new if e["extension_type"] == "python"]
+            shutil.copy2(cfg_path, backup)
+        cfg = merge_config(cfg, new, community="Community" in cfg_path.name)
+        save_json(cfg_path, cfg)
+        n = len(cfg["user_options"]["extender"]["extensions"])
+        py = [e["name"] for e, _ in new if e["extension_type"] == "python"]
         if py and not jython_set(cfg):
             print(f"WARN  {cfg_path.name}: {', '.join(py)} need Jython (Extensions > Settings > Python environment)")
-        print(f"wrote {cfg_path} ({len(exts)} extensions, backup {backup.name})")
+        print(f"wrote {cfg_path} ({n} extensions, backup {backup.name})")
     return 1 if failed else 0
 
 

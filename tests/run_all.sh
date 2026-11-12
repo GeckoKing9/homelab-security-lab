@@ -16,6 +16,7 @@ run python3 "$here/test_tailscale_timeout.py"
 run python3 "$here/test_index_template.py"
 run python3 "$here/test_hub_capture_errors.py"
 run python3 "$here/test_bookmarks.py"
+run python3 "$here/test_burp_extensions.py"
 run node "$here/test_xss_escape.js"
 
 if [ "$fail" -eq 0 ]; then echo "ALL PASS"; else echo "SOME FAILED"; fi

@@ -67,15 +67,12 @@ BLUE-TEAM / DFIR / MALWARE
   clamscan -r <path>          antivirus scan
   velociraptor gui            endpoint DFIR & hunting (~/tools/velociraptor)
 
-BURP + FIREFOX  (python3 burp-extensions.py --list = the Burp set, on/off)
-  Burp on:  Auth Analyzer, Hackvertor, JS Miner, JWT Editor, Param Miner, Active Scan++, Copy As Python-Requests, PwnFox
-  Burp off: Turbo Intruder, HTTP Request Smuggler, SSPP Scanner, AI Prompt Fuzzer, Postman Importer,
-            Collaborator Everywhere, SAML Raider  (tick in Extensions > Installed when the job needs it)
-  Firefox:  PwnFox (containers -> coloured in Burp), FoxyProxy, Wappalyzer, Cookie-Editor, HackTools, DotGit,
-            Retire.js, User-Agent Switcher, SingleFile
+BURP + FIREFOX  (Phase 5b)
+  python3 vm/burp-extensions.py --list   the Burp extension set and which start on/off
+  Firefox add-ons: PwnFox + the pentest set, by policy in /etc/firefox/policies/policies.json
 
 HEAVY (only if INSTALL_HEAVY=1)
-  msfconsole                 Metasploit exploitation framework
+  msfconsole                  Metasploit exploitation framework
   sliver-server               Sliver C2 framework
   /usr/share/seclists         the SecLists wordlist collection
 CATEOF
@@ -179,12 +176,13 @@ VR=$(curl -s https://api.github.com/repos/Velocidex/velociraptor/releases/latest
 log "Phase 5b: Burp extensions + Firefox pentest add-ons"
 # Burp: needs ~/.BurpSuite to exist (start Burp once, close it). The script refuses while Burp runs.
 BURPX="$(dirname "$0")/burp-extensions.py"
-if [ -d ~/.BurpSuite ]; then python3 -I "$BURPX" || true
+if [ ! -f "$BURPX" ]; then echo "  SKIPPED Burp extensions: $BURPX not found (keep the toolkit next to burp-extensions.py)"
+elif [ -d ~/.BurpSuite ]; then python3 -I "$BURPX" || echo "  Burp extensions incomplete: see FAIL lines above"
 else echo "  Burp not set up yet: start Burp once, close it, then run: python3 $BURPX"; fi
 # Firefox (Ubuntu snap reads /etc/firefox/policies): installs each add-on for every profile on next start.
 sudo mkdir -p /etc/firefox/policies
 sudo python3 -I - <<'PY'
-import json, os
+import datetime, json, os, shutil
 p = "/etc/firefox/policies/policies.json"
 addons = {  # AMO GUID -> AMO slug
     "foxyproxy@eric.h.jung": "foxyproxy-standard", "wappalyzer@crunchlabz.com": "wappalyzer",
@@ -196,10 +194,16 @@ addons = {  # AMO GUID -> AMO slug
 d = json.load(open(p)) if os.path.exists(p) else {}
 ext = d.setdefault("policies", {}).setdefault("ExtensionSettings", {})
 ext.setdefault("*", {"installation_mode": "allowed"})
-for guid, slug in addons.items():
-    ext[guid] = {"installation_mode": "normal_installed",
-                 "install_url": f"https://addons.mozilla.org/firefox/downloads/latest/{slug}/latest.xpi"}
-json.dump(d, open(p, "w"), indent=2)
+for guid, slug in addons.items():  # setdefault: an entry you already set (blocked, force_installed) wins
+    ext.setdefault(guid, {"installation_mode": "normal_installed",
+                          "install_url": f"https://addons.mozilla.org/firefox/downloads/latest/{slug}/latest.xpi"})
+bak = f"{p}.bak-{datetime.date.today():%Y%m%d}"
+if os.path.exists(p) and not os.path.exists(bak):
+    shutil.copy2(p, bak)
+with open(p + ".tmp", "w") as f:
+    json.dump(d, f, indent=2)
+os.chmod(p + ".tmp", 0o644)
+os.replace(p + ".tmp", p)
 print(f"  {len(addons)} Firefox add-ons in {p} (restart Firefox to apply)")
 PY
 
