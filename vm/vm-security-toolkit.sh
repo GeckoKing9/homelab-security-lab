@@ -177,13 +177,13 @@ log "Phase 5b: Burp extensions + Firefox pentest add-ons"
 # Burp: needs ~/.BurpSuite to exist (start Burp once, close it). The script refuses while Burp runs.
 # Also installed as the `burp-extensions` command so `burp-extensions --list` works from anywhere;
 # the toolkit itself runs the repo copy with python3 -I (no PYTHON* env, no cwd imports).
-PHASE_FAILS="${PHASE_FAILS:-}"
+PHASE_FAILS=""
 BURPX="$(dirname "$0")/burp-extensions.py"
 if [ ! -f "$BURPX" ]; then
   echo "  Burp extensions NOT installed: $BURPX not found (keep the toolkit next to burp-extensions.py)"
   PHASE_FAILS="$PHASE_FAILS burp-extensions"
 else
-  sudo install -m 755 "$BURPX" /usr/local/bin/burp-extensions
+  sudo install -m 755 "$BURPX" /usr/local/bin/burp-extensions || PHASE_FAILS="$PHASE_FAILS burp-extensions-command"
   if [ ! -d ~/.BurpSuite ]; then echo "  Burp not set up yet: start Burp once, close it, then run: burp-extensions"
   elif ! python3 -I "$BURPX"; then echo "  Burp extensions NOT fully installed: see its output above"; PHASE_FAILS="$PHASE_FAILS burp-extensions"; fi
 fi

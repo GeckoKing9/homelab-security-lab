@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3 -I
 """Install a curated set of Burp Suite extensions the way the BApp Store does.
 
 Each BApp is downloaded from portswigger.net, extracted to ~/.BurpSuite/bapps/<uuid>/ and
